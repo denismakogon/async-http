@@ -52,7 +52,7 @@ def serve(
     keep_alive_timeout=5,
     ssl=None,
     sock=None,
-    request_max_size=None,
+    request_max_size=100000000,
     reuse_port=False,
     loop=None,
     protocol=HttpProtocol,
