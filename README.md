@@ -3,6 +3,12 @@
 This framework was inspired by [sanic](https://github.com/huge-success/sanic) framework.
 This framework designed to be fast and be capable to start within 1.5 seconds at max (see [cold start problem](https://medium.com/@denismakogon/investigating-pythons-performance-issue-cold-start-8ebf443a8a20)).
 
+## How to install
+
+```bash
+pip install async-http-minimal
+```
+
 ## Example
 
 ```python
