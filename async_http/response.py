@@ -13,12 +13,7 @@
 #    under the License.
 
 from functools import partial
-from mimetypes import guess_type
-from os import path
 from urllib.parse import quote_plus
-
-from aiofiles import open as open_async
-from multidict import CIMultiDict
 
 from .cookie import CookieJar
 from .exceptions import (
@@ -79,7 +74,7 @@ class StreamingHTTPResponse(BaseHTTPResponse):
         self.content_type = content_type
         self.streaming_fn = streaming_fn
         self.status = status
-        self.headers = CIMultiDict(headers or {})
+        self.headers = dict(headers or {})
         self._cookies = None
 
     async def write(self, data):
@@ -161,7 +156,7 @@ class HTTPResponse(BaseHTTPResponse):
             self.body = body_bytes
 
         self.status = status
-        self.headers = CIMultiDict(headers or {})
+        self.headers = dict(headers or {})
         self._cookies = None
 
     def output(self, version="1.1", keep_alive=False, keep_alive_timeout=None):
@@ -203,12 +198,6 @@ class HTTPResponse(BaseHTTPResponse):
             headers,
             body,
         )
-
-    @property
-    def cookies(self):
-        if self._cookies is None:
-            self._cookies = CookieJar(self.headers)
-        return self._cookies
 
 
 def json(
@@ -283,117 +272,6 @@ def html(body, status=200, headers=None):
         status=status,
         headers=headers,
         content_type="text/html; charset=utf-8",
-    )
-
-
-async def file(
-    location,
-    status=200,
-    mime_type=None,
-    headers=None,
-    filename=None,
-    _range=None,
-):
-    """Return a response object with file data.
-
-    :param location: Location of file on system.
-    :param mime_type: Specific mime_type.
-    :param headers: Custom Headers.
-    :param filename: Override filename.
-    :param _range:
-    """
-    headers = headers or {}
-    if filename:
-        headers.setdefault(
-            "Content-Disposition", 'attachment; filename="{}"'.format(filename)
-        )
-    filename = filename or path.split(location)[-1]
-
-    async with open_async(location, mode="rb") as _file:
-        if _range:
-            await _file.seek(_range.start)
-            out_stream = await _file.read(_range.size)
-            headers["Content-Range"] = "bytes %s-%s/%s" % (
-                _range.start,
-                _range.end,
-                _range.total,
-            )
-            status = 206
-        else:
-            out_stream = await _file.read()
-
-    mime_type = mime_type or guess_type(filename)[0] or "text/plain"
-    return HTTPResponse(
-        status=status,
-        headers=headers,
-        content_type=mime_type,
-        body_bytes=out_stream,
-    )
-
-
-async def file_stream(
-    location,
-    status=200,
-    chunk_size=4096,
-    mime_type=None,
-    headers=None,
-    filename=None,
-    _range=None,
-):
-    """Return a streaming response object with file data.
-
-    :param location: Location of file on system.
-    :param chunk_size: The size of each chunk in the stream (in bytes)
-    :param mime_type: Specific mime_type.
-    :param headers: Custom Headers.
-    :param filename: Override filename.
-    :param _range:
-    """
-    headers = headers or {}
-    if filename:
-        headers.setdefault(
-            "Content-Disposition", 'attachment; filename="{}"'.format(filename)
-        )
-    filename = filename or path.split(location)[-1]
-
-    _file = await open_async(location, mode="rb")
-
-    async def _streaming_fn(response):
-        nonlocal _file, chunk_size
-        try:
-            if _range:
-                chunk_size = min((_range.size, chunk_size))
-                await _file.seek(_range.start)
-                to_send = _range.size
-                while to_send > 0:
-                    content = await _file.read(chunk_size)
-                    if len(content) < 1:
-                        break
-                    to_send -= len(content)
-                    await response.write(content)
-            else:
-                while True:
-                    content = await _file.read(chunk_size)
-                    if len(content) < 1:
-                        break
-                    await response.write(content)
-        finally:
-            await _file.close()
-        return  # Returning from this fn closes the stream
-
-    mime_type = mime_type or guess_type(filename)[0] or "text/plain"
-    if _range:
-        headers["Content-Range"] = "bytes %s-%s/%s" % (
-            _range.start,
-            _range.end,
-            _range.total,
-        )
-        status = 206
-    return StreamingHTTPResponse(
-        streaming_fn=_streaming_fn,
-        status=status,
-        headers=headers,
-        content_type=mime_type,
     )
 
 

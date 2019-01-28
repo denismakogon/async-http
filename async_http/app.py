@@ -19,7 +19,7 @@ from collections import defaultdict, deque
 from inspect import getmodulename, isawaitable, stack
 from traceback import format_exc
 
-from .exceptions import AsyncHTTPException, ServerError
+from .exceptions import AsyncHTTPException
 from .error_handler import ErrorHandler
 from .request import Request
 from .response import HTTPResponse, StreamingHTTPResponse
@@ -110,35 +110,16 @@ class AsyncHTTPServer(object):
                 # -------------------------------------------- #
 
                 # Fetch handler from router
-                handler, args, kwargs, uri = self.router.get(request)
+                handler, uri = self.router.get(request.path, request.method)
 
                 request.uri_template = uri
-                if handler is None:
-                    raise ServerError(
-                        (
-                            "'None' was returned while requesting a "
-                            "handler from the router"
-                        )
-                    )
-                else:
-                    if not getattr(handler, "__blueprintname__", False):
-                        request.endpoint = self._build_endpoint_name(
-                            handler.__name__
-                        )
-                    else:
-                        request.endpoint = self._build_endpoint_name(
-                            getattr(handler, "__blueprintname__", ""),
-                            handler.__name__,
-                        )
-
-                # Run response handler
-                response = handler(request, *args, **kwargs)
+                response = handler(request)
                 if isawaitable(response):
                     logger.info("got response from function")
                     res = await response
-                    body = res.body()
-                    headers = res.context().GetResponseHeaders()
-                    status = res.status()
+                    body = res.body
+                    headers = res.headers
+                    status = res.status
                     response = HTTPResponse(
                         body=body, status=status,
                         headers=headers,
@@ -203,10 +184,6 @@ class AsyncHTTPServer(object):
             await stream_callback(response)
         else:
             write_callback(response)
-
-    def _build_endpoint_name(self, *parts):
-        parts = [self.name, *parts]
-        return ".".join(parts)
 
     def run(self, sock=None, loop=None):
         return serve(

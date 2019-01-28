@@ -32,8 +32,6 @@ from .exceptions import (
 logger = logging.getLogger(__name__)
 
 
-
-
 class ErrorHandler:
     handlers = None
     cached_handlers = None
@@ -119,13 +117,8 @@ class ErrorHandler:
                 return text("An error occurred while handling an error", 500)
         return response
 
-    def log(self, message, level="error"):
-        """
-        Deprecated, do not use.
-        """
-
     def default(self, request, exception):
-        self.log(format_exc())
+        logger.error(format_exc())
         try:
             url = repr(request.url)
         except AttributeError:

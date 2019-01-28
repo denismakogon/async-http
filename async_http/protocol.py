@@ -3,7 +3,6 @@ import traceback
 
 from httptools import HttpRequestParser
 from httptools.parser.errors import HttpParserError
-from multidict import CIMultiDict
 
 from .exceptions import (
     InvalidUsage,
@@ -291,7 +290,7 @@ class HttpProtocol(asyncio.Protocol):
     def on_headers_complete(self):
         self.request = self.request_class(
             url_bytes=self.url,
-            headers=CIMultiDict(self.headers),
+            headers=dict(self.headers),
             version=self.parser.get_http_version(),
             method=self.parser.get_method().decode(),
             transport=self.transport,
@@ -379,19 +378,6 @@ class HttpProtocol(asyncio.Protocol):
                 extra["byte"] = len(response.body)
             else:
                 extra["byte"] = -1
-
-            extra["host"] = "UNKNOWN"
-            if self.request is not None:
-                if self.request.ip:
-                    extra["host"] = "{0}:{1}".format(
-                        self.request.ip, self.request.port
-                    )
-
-                extra["request"] = "{0} {1}".format(
-                    self.request.method, self.request.url
-                )
-            else:
-                extra["request"] = "nil"
 
     def write_response(self, response):
         """
