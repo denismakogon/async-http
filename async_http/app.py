@@ -15,8 +15,6 @@
 import logging
 
 from asyncio import CancelledError
-from collections import defaultdict, deque
-from inspect import getmodulename, isawaitable, stack
 from traceback import format_exc
 
 from .exceptions import AsyncHTTPException
@@ -35,22 +33,13 @@ class AsyncHTTPServer(object):
         router=None,
     ):
 
-        if name is None:
-            frame_records = stack()[1]
-            name = getmodulename(frame_records[1])
-
         self.name = name
         self.router = router
         self.request_class = Request
         self.error_handler = ErrorHandler()
         self.config = {}
-        self.request_middleware = deque()
-        self.response_middleware = deque()
-        self.blueprints = {}
-        self._blueprint_order = []
         self.debug = None
         self.sock = None
-        self.listeners = defaultdict(list)
         self.is_running = False
         self.is_request_stream = False
         self.websocket_enabled = False
@@ -58,28 +47,6 @@ class AsyncHTTPServer(object):
 
         # Register alternative method names
         self.go_fast = self.run
-
-    async def _run_request_middleware(self, request):
-        # The if improves speed.  I don't know why
-        if self.request_middleware:
-            for middleware in self.request_middleware:
-                response = middleware(request)
-                if isawaitable(response):
-                    response = await response
-                if response:
-                    return response
-        return None
-
-    async def _run_response_middleware(self, request, response):
-        if self.response_middleware:
-            for middleware in self.response_middleware:
-                _response = middleware(request, response)
-                if isawaitable(_response):
-                    _response = await _response
-                if _response:
-                    response = _response
-                    break
-        return response
 
     async def handle_request(self, request, write_callback, stream_callback):
         """Take a request from the HTTP Server and return a response object
@@ -94,92 +61,52 @@ class AsyncHTTPServer(object):
         """
         # Define `response` var here to remove warnings about
         # allocation before assignment below.
-        response = None
         cancelled = False
         try:
-            # -------------------------------------------- #
-            # Request Middleware
-            # -------------------------------------------- #
-
             request.app = self
-            response = await self._run_request_middleware(request)
-            # No middleware results
-            if not response:
-                # -------------------------------------------- #
-                # Execute Handler
-                # -------------------------------------------- #
+            # -------------------------------------------- #
+            # Execute Handler
+            # -------------------------------------------- #
 
-                # Fetch handler from router
-                handler, uri = self.router.get(request.path, request.method)
+            # Fetch handler from router
+            handler, uri = self.router.get(
+                request.path, request.method)
 
-                request.uri_template = uri
-                response = handler(request)
-                if isawaitable(response):
-                    logger.info("got response from function")
-                    res = await response
-                    body = res.body
-                    headers = res.headers
-                    status = res.status
-                    response = HTTPResponse(
-                        body=body, status=status,
-                        headers=headers,
-                        content_type=headers.get("Content-Type")
-                    )
+            request.uri_template = uri
+            response = handler(request)
+            logger.info("got response from function")
+            res = await response
+            body = res.body
+            headers = res.headers
+            status = res.status
+            response = HTTPResponse(
+                body=body, status=status,
+                headers=headers,
+                content_type=headers.get("Content-Type")
+            )
         except CancelledError:
-            # If response handler times out, the server handles the error
-            # and cancels the handle_request job.
-            # In this case, the transport is already closed and we cannot
-            # issue a response.
             response = None
             cancelled = True
         except Exception as e:
-            # -------------------------------------------- #
-            # Response Generation Failed
-            # -------------------------------------------- #
-            logger.error("Exception: ", exc_info=1)
-            try:
-                response = self.error_handler.response(request, e)
-                if isawaitable(response):
-                    response = await response
-            except Exception as e:
-                if isinstance(e, AsyncHTTPException):
-                    response = self.error_handler.default(
-                        request=request, exception=e
-                    )
-                elif self.debug:
-                    response = HTTPResponse(
-                        "Error while handling error: {}\nStack: {}".format(
-                            e, format_exc()
-                        ),
-                        status=500,
-                    )
-                else:
-                    response = HTTPResponse(
-                        "An error occurred while handling an error", status=500
-                    )
+            if isinstance(e, AsyncHTTPException):
+                response = self.error_handler.default(
+                    request=request, exception=e
+                )
+            elif self.debug:
+                response = HTTPResponse(
+                    "Error while handling error: {}\nStack: {}".format(
+                        e, format_exc()
+                    ),
+                    status=500,
+                )
+            else:
+                response = HTTPResponse(
+                    "An error occurred while handling an error", status=500
+                )
         finally:
-            # -------------------------------------------- #
-            # Response Middleware
-            # -------------------------------------------- #
-            # Don't run response middleware if response is None
-            if response is not None:
-                try:
-                    response = await self._run_response_middleware(
-                        request, response
-                    )
-                except CancelledError:
-                    # Response middleware can timeout too, as above.
-                    response = None
-                    cancelled = True
-                except BaseException:
-                    logger.error(
-                        "Exception occurred in one of response "
-                        "middleware handlers", exc_info=1
-                    )
             if cancelled:
                 raise CancelledError()
 
-        # pass the response to the correct callback
         if isinstance(response, StreamingHTTPResponse):
             await stream_callback(response)
         else:

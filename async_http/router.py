@@ -13,7 +13,7 @@
 #    under the License.
 
 
-from .exceptions import  MethodNotSupported, NotFound
+from .exceptions import MethodNotSupported, NotFound
 
 
 from collections import namedtuple

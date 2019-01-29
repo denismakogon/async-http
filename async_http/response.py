@@ -15,7 +15,6 @@
 from functools import partial
 from urllib.parse import quote_plus
 
-from .cookie import CookieJar
 from .exceptions import (
     STATUS_CODES, has_message_body, remove_entity_headers
 )
@@ -50,12 +49,6 @@ class BaseHTTPResponse:
                 )
 
         return headers
-
-    @property
-    def cookies(self):
-        if self._cookies is None:
-            self._cookies = CookieJar(self.headers)
-        return self._cookies
 
 
 class StreamingHTTPResponse(BaseHTTPResponse):
